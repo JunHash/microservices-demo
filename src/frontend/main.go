@@ -15,28 +15,34 @@
 package main
 
 import (
+	//"cloud.google.com/go/profiler"
 	"context"
+	"github.com/sirupsen/logrus"
+
+	//"contrib.go.opencensus.io/exporter/jaeger"
+	//"contrib.go.opencensus.io/exporter/stackdriver"
 	"fmt"
+	//"log"
 	"net/http"
 	"os"
 	"time"
 
-	"cloud.google.com/go/profiler"
-	"contrib.go.opencensus.io/exporter/stackdriver"
+	//"go.opencensus.io/stats/view"
+	//"go.opencensus.io/trace"
+
+	//"go.opencensus.io/plugin/ocgrpc"
+	//"go.opencensus.io/plugin/ochttp"
+	//"go.opencensus.io/plugin/ochttp/propagation/b3"
+
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
-	"go.opencensus.io/exporter/jaeger"
-	"go.opencensus.io/plugin/ocgrpc"
-	"go.opencensus.io/plugin/ochttp"
-	"go.opencensus.io/plugin/ochttp/propagation/b3"
-	"go.opencensus.io/stats/view"
-	"go.opencensus.io/trace"
+	//"go.opencensus.io/exporter/jaeger"
+
 	"google.golang.org/grpc"
 )
 
 const (
-	port            = "8080"
+	port            = "8081"
 	defaultCurrency = "USD"
 	cookieMaxAge    = 60 * 60 * 48
 
@@ -80,8 +86,13 @@ type frontendServer struct {
 	adSvcConn *grpc.ClientConn
 }
 
+
+
+
 func main() {
+
 	ctx := context.Background()
+
 	log := logrus.New()
 	log.Level = logrus.DebugLevel
 	log.Formatter = &logrus.JSONFormatter{
@@ -92,17 +103,24 @@ func main() {
 		},
 		TimestampFormat: time.RFC3339Nano,
 	}
+	//标准std输出
 	log.Out = os.Stdout
 
+	/*
 	go initProfiling(log, "frontend", "1.0.0")
 	go initTracing(log)
+
+	 */
+
 
 	srvPort := port
 	if os.Getenv("PORT") != "" {
 		srvPort = os.Getenv("PORT")
 	}
 	addr := os.Getenv("LISTEN_ADDR")
+
 	svc := new(frontendServer)
+
 	mustMapEnv(&svc.productCatalogSvcAddr, "PRODUCT_CATALOG_SERVICE_ADDR")
 	mustMapEnv(&svc.currencySvcAddr, "CURRENCY_SERVICE_ADDR")
 	mustMapEnv(&svc.cartSvcAddr, "CART_SERVICE_ADDR")
@@ -120,6 +138,7 @@ func main() {
 	mustConnGRPC(ctx, &svc.adSvcConn, svc.adSvcAddr)
 
 	r := mux.NewRouter()
+
 	r.HandleFunc("/", svc.homeHandler).Methods(http.MethodGet, http.MethodHead)
 	r.HandleFunc("/product/{id}", svc.productHandler).Methods(http.MethodGet, http.MethodHead)
 	r.HandleFunc("/cart", svc.viewCartHandler).Methods(http.MethodGet, http.MethodHead)
@@ -135,14 +154,40 @@ func main() {
 	var handler http.Handler = r
 	handler = &logHandler{log: log, next: handler} // add logging
 	handler = ensureSessionID(handler)             // add session ID
+
+	/*
 	handler = &ochttp.Handler{                     // add opencensus instrumentation
 		Handler:     handler,
 		Propagation: &b3.HTTPFormat{}}
+
+	 */
 
 	log.Infof("starting server on " + addr + ":" + srvPort)
 	log.Fatal(http.ListenAndServe(addr+":"+srvPort, handler))
 }
 
+func mustMapEnv(target *string, envKey string) {
+	v := os.Getenv(envKey)
+	if v == "" {
+		panic(fmt.Sprintf("environment variable %q not set", envKey))
+	}
+	*target = v
+}
+
+func mustConnGRPC(ctx context.Context, conn **grpc.ClientConn, addr string) {
+	var err error
+	*conn, err = grpc.DialContext(ctx, addr,
+		grpc.WithInsecure(),
+		grpc.WithTimeout(time.Second*3))
+	//grpc.WithStatsHandler(&ocgrpc.ClientHandler{})
+
+	if err != nil {
+		panic(errors.Wrapf(err, "grpc: failed to connect %s", addr))
+	}
+}
+
+
+/*
 func initJaegerTracing(log logrus.FieldLogger) {
 
 	svcAddr := os.Getenv("JAEGER_SERVICE_ADDR")
@@ -242,21 +287,6 @@ func initProfiling(log logrus.FieldLogger, service, version string) {
 	log.Warn("warning: could not initialize stackdriver profiler after retrying, giving up")
 }
 
-func mustMapEnv(target *string, envKey string) {
-	v := os.Getenv(envKey)
-	if v == "" {
-		panic(fmt.Sprintf("environment variable %q not set", envKey))
-	}
-	*target = v
-}
 
-func mustConnGRPC(ctx context.Context, conn **grpc.ClientConn, addr string) {
-	var err error
-	*conn, err = grpc.DialContext(ctx, addr,
-		grpc.WithInsecure(),
-		grpc.WithTimeout(time.Second*3),
-		grpc.WithStatsHandler(&ocgrpc.ClientHandler{}))
-	if err != nil {
-		panic(errors.Wrapf(err, "grpc: failed to connect %s", addr))
-	}
-}
+ */
+
